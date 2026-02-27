@@ -1,0 +1,5 @@
+{
+  "name": "Lista de Compras",
+  "description": "A clean interface to test login authentication via n8n webhooks.",
+  "requestFramePermissions": []
+}
