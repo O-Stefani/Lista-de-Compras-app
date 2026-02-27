@@ -35,6 +35,7 @@ interface TemplateItem {
 }
 
 interface ItemCompra {
+  id: string;
   nome: string;
   comprado: boolean;
   preco: number;
@@ -69,7 +70,38 @@ export default function App() {
   // Data State
   const [template, setTemplate] = useState<Record<string, TemplateItem[]>>({});
   const [listaDoMes, setListaDoMes] = useState<Record<string, ItemCompra[]> | null>(null);
-  const [selectedForMonth, setSelectedForMonth] = useState<Record<string, string[]>>({});
+  const [mesReferencia, setMesReferencia] = useState('');
+  const [selectedForMonth, setSelectedForMonth] = useState<Record<string, TemplateItem[]>>({});
+
+  // UI State for Monthly List
+  const [showMonthPrompt, setShowMonthPrompt] = useState(false);
+  const [tempMonth, setTempMonth] = useState('');
+
+  // Persistence for listaDoMes and mesReferencia (User-specific)
+  React.useEffect(() => {
+    if (userId) {
+      const savedList = localStorage.getItem(`listaDoMes_${userId}`);
+      const savedMonth = localStorage.getItem(`mesReferencia_${userId}`);
+      if (savedList) setListaDoMes(JSON.parse(savedList));
+      if (savedMonth) setMesReferencia(savedMonth);
+    }
+  }, [userId]);
+
+  React.useEffect(() => {
+    if (userId && listaDoMes) {
+      localStorage.setItem(`listaDoMes_${userId}`, JSON.stringify(listaDoMes));
+    } else if (userId) {
+      localStorage.removeItem(`listaDoMes_${userId}`);
+    }
+  }, [listaDoMes, userId]);
+
+  React.useEffect(() => {
+    if (userId && mesReferencia) {
+      localStorage.setItem(`mesReferencia_${userId}`, mesReferencia);
+    } else if (userId) {
+      localStorage.removeItem(`mesReferencia_${userId}`);
+    }
+  }, [mesReferencia, userId]);
 
   // UI State for Template Creation
   const [isAddingSession, setIsAddingSession] = useState(false);
@@ -227,11 +259,16 @@ export default function App() {
     setLoginMsg(null);
     setTemplate({});
     setListaDoMes(null);
+    setMesReferencia('');
     setSelectedForMonth({});
+    setShowMonthPrompt(false);
+    setTempMonth('');
     
     // Problem 1: Clear localStorage
     localStorage.removeItem('userId');
     localStorage.removeItem('email');
+    // Note: We don't necessarily clear user-specific lists on logout 
+    // to keep them for the next login, but we clear the current session state.
 
     setScreen('login');
   };
@@ -314,25 +351,40 @@ export default function App() {
   };
 
   // Monthly List Logic
-  const toggleSelection = (category: string, itemNome: string) => {
+  const toggleSelection = (category: string, item: TemplateItem) => {
     setSelectedForMonth(prev => {
       const current = prev[category] || [];
-      if (current.includes(itemNome)) {
-        return { ...prev, [category]: current.filter(i => i !== itemNome) };
+      const exists = current.find(i => i.id === item.id);
+      if (exists) {
+        return { ...prev, [category]: current.filter(i => i.id !== item.id) };
       } else {
-        return { ...prev, [category]: [...current, itemNome] };
+        return { ...prev, [category]: [...current, item] };
       }
     });
   };
 
   const concluirSelecao = () => {
+    if (Object.keys(selectedForMonth).length === 0) {
+      alert("Selecione pelo menos um item.");
+      return;
+    }
+    setTempMonth(new Date().toLocaleString('pt-BR', { month: 'long', year: 'numeric' }));
+    setShowMonthPrompt(true);
+  };
+
+  const confirmarListaDoMes = () => {
+    if (!tempMonth) return;
+
     const newList: Record<string, ItemCompra[]> = {};
-    (Object.entries(selectedForMonth) as [string, string[]][]).forEach(([cat, items]) => {
+    (Object.entries(selectedForMonth) as [string, TemplateItem[]][]).forEach(([cat, items]) => {
       if (items.length > 0) {
-        newList[cat] = items.map(nome => ({ nome, comprado: false, preco: 0 }));
+        newList[cat] = items.map(item => ({ id: item.id, nome: item.nome, comprado: false, preco: 0 }));
       }
     });
+    
+    setMesReferencia(tempMonth);
     setListaDoMes(newList);
+    setShowMonthPrompt(false);
     setScreen('compra');
   };
 
@@ -497,7 +549,9 @@ export default function App() {
             </div>
             <div>
               <h3 className={`font-black text-lg ${darkMode ? 'text-white' : 'text-gray-800'}`}>Fazer Compra</h3>
-              <p className={`text-xs font-bold ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Acompanhe preços e total</p>
+              <p className={`text-xs font-bold ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                {mesReferencia ? `Lista ativa: ${mesReferencia}` : 'Acompanhe preços e total'}
+              </p>
             </div>
           </button>
         </div>
@@ -665,14 +719,14 @@ export default function App() {
                   {items.map(item => (
                     <div 
                       key={item.id} 
-                      onClick={() => toggleSelection(cat, item.nome)}
+                      onClick={() => toggleSelection(cat, item)}
                       className={`px-6 py-5 flex items-center justify-between cursor-pointer transition-all ${darkMode ? 'hover:bg-gray-800/50' : 'hover:bg-gray-50'}`}
                     >
                       <span className={`font-bold text-lg ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{item.nome}</span>
                       <div className={`w-8 h-8 rounded-xl border-2 flex items-center justify-center transition-all ${
-                        selectedForMonth[cat]?.includes(item.nome) ? 'bg-indigo-600 border-indigo-600' : darkMode ? 'border-gray-700' : 'border-gray-200'
+                        selectedForMonth[cat]?.find(i => i.id === item.id) ? 'bg-indigo-600 border-indigo-600' : darkMode ? 'border-gray-700' : 'border-gray-200'
                       }`}>
-                        {selectedForMonth[cat]?.includes(item.nome) && <Check className="w-5 h-5 text-white" />}
+                        {selectedForMonth[cat]?.find(i => i.id === item.id) && <Check className="w-5 h-5 text-white" />}
                       </div>
                     </div>
                   ))}
@@ -690,6 +744,46 @@ export default function App() {
             Concluir Seleção
           </button>
         </div>
+
+        {/* Month Prompt Modal */}
+        <AnimatePresence>
+          {showMonthPrompt && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className={`${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-white'} p-8 rounded-[32px] shadow-2xl w-full max-w-sm border`}
+              >
+                <h3 className={`text-xl font-black mb-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>Mês de Referência</h3>
+                <p className={`text-sm font-bold mb-6 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Informe o mês para identificar esta lista.</p>
+                
+                <input 
+                  type="text"
+                  value={tempMonth}
+                  onChange={(e) => setTempMonth(e.target.value)}
+                  placeholder="Ex: Março/2024"
+                  className={`w-full px-5 py-4 mb-6 ${darkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-gray-50 border-gray-200 text-gray-900'} rounded-2xl outline-none focus:ring-4 focus:ring-indigo-500/10 font-bold`}
+                />
+
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => setShowMonthPrompt(false)}
+                    className={`flex-1 py-4 rounded-2xl font-black ${darkMode ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500'}`}
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    onClick={confirmarListaDoMes}
+                    className="flex-1 bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-indigo-500/20"
+                  >
+                    Confirmar
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -697,11 +791,29 @@ export default function App() {
   const renderCompra = () => (
     <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'bg-gray-950' : 'bg-[#f4f6fb]'} p-6 pb-44`}>
       <div className="max-w-2xl mx-auto">
-        <div className="flex items-center gap-4 mb-8">
-          <button onClick={() => setScreen('home')} className={`p-3 ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-800 shadow-sm'} rounded-2xl transition-all`}>
-            <ArrowLeft className="w-6 h-6" />
-          </button>
-          <h1 className={`text-2xl font-black ${darkMode ? 'text-white' : 'text-gray-800'}`}>Fazer Compra</h1>
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setScreen('home')} className={`p-3 ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-800 shadow-sm'} rounded-2xl transition-all`}>
+              <ArrowLeft className="w-6 h-6" />
+            </button>
+            <div>
+              <h1 className={`text-2xl font-black ${darkMode ? 'text-white' : 'text-gray-800'}`}>Fazer Compra</h1>
+              {mesReferencia && <p className={`text-xs font-bold ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>Mês: {mesReferencia}</p>}
+            </div>
+          </div>
+          {listaDoMes && (
+            <button 
+              onClick={() => {
+                if(confirm("Deseja limpar a lista atual?")) {
+                  setListaDoMes(null);
+                  setMesReferencia('');
+                }
+              }}
+              className={`p-3 rounded-2xl ${darkMode ? 'bg-red-500/10 text-red-400' : 'bg-red-50 text-red-500'}`}
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         {!listaDoMes ? (
@@ -716,7 +828,7 @@ export default function App() {
                 <div className="grid gap-3">
                   {items.map((item, idx) => (
                     <div 
-                      key={item.nome} 
+                      key={item.id} 
                       className={`${darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100'} p-5 rounded-[32px] shadow-sm border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all ${item.comprado ? 'opacity-50' : ''}`}
                     >
                       <div 
